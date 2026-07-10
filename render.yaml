@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: audio-converter
+    env: docker
+    region: oregon
+    plan: free
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+      - key: MAX_UPLOAD_MB
+        value: 150
+      - key: PUBLIC_BASE_URL
+        value: https://your-app-name.onrender.com
+      - key: ROBLOX_UPLOAD_URL
+        value: https://apis.roblox.com/assets/v1/assets

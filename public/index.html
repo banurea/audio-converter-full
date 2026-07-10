@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Audio Converter to OGG</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <div class="tabs" role="tablist">
+      <button id="tabConvert" class="tabButton active" role="tab" aria-selected="true">Convert</button>
+      <button id="tabBatch" class="tabButton" role="tab" aria-selected="false">Batch Review</button>
+      <button id="tabResults" class="tabButton" role="tab" aria-selected="false">Results</button>
+    </div>
+    <section class="hero card">
+      <p class="overline">PASTE YOUR LINK HERE</p>
+      <h2 class="heroTitle">Konversi audio langsung atau batch</h2>
+      <p class="heroText">Masukkan satu link di atas, atau gunakan daftar link batch di bawah. Jangan campur keduanya untuk hasil terbaik.</p>
+      <div class="inputBox">
+        <span class="icon">🔗</span>
+        <input id="urlInput" placeholder="https://youtube.com/watch?v=... / spotify track / direct audio" />
+        <button id="clearBtn" class="ghost">×</button>
+      </div>
+      <div class="tools">
+        <button id="pasteBtn" class="mini"><span>📋</span> PASTE LINK</button>
+        <label class="mini filePicker"><span>⬆</span> UPLOAD FILES<input id="fileInput" type="file" multiple accept="audio/*,video/*,.mp3,.wav,.m4a,.ogg,.mp4,.webm,.mov,.mkv" /></label>
+        <span class="ready"><b></b> SINGLE LINK / BATCH / UPLOAD READY</span>
+      </div>
+      <div class="robloxSettingsCard card">
+        <div class="robloxSettingsHead">
+          <div>
+            <strong>SETTINGS ROBLOX</strong>
+            <small>API key, creator ID, dan URL upload bisa disimpan lalu diganti kapan saja.</small>
+          </div>
+          <button id="saveRobloxSettingsBtn" class="mini">💾 SIMPAN</button>
+        </div>
+        <div class="robloxSettingsGrid">
+          <label>
+            <span>ROBLOX API KEY</span>
+            <input id="robloxApiKeyInput" type="password" placeholder="Masukkan API key" />
+          </label>
+          <label>
+            <span>ROBLOX CREATOR ID</span>
+            <input id="robloxCreatorIdInput" type="text" placeholder="Contoh: 8785654484" />
+          </label>
+          <label>
+            <span>CREATOR TYPE</span>
+            <select id="robloxCreatorTypeSelect">
+              <option value="user">User</option>
+              <option value="group">Group</option>
+            </select>
+          </label>
+          <label>
+            <span>UPLOAD URL</span>
+            <input id="robloxUploadUrlInput" type="text" placeholder="https://apis.roblox.com/assets/v1/assets" />
+          </label>
+          <label>
+            <span>PERMISSION URL (opsional)</span>
+            <input id="robloxPermissionUrlInput" type="text" placeholder="https://apis.roblox.com/assets/v1/assets/{assetId}/permissions" />
+          </label>
+        </div>
+        <div id="robloxSettingsStatus" class="robloxSettingsStatus"></div>
+      </div>
+      <div class="batchLinks">
+        <div class="batchHead">
+          <div>
+            <strong>LINK BATCH</strong>
+            <small>Gunakan jika ingin convert beberapa link sekaligus.</small>
+          </div>
+          <button id="addLinkBtn" class="mini">+ TAMBAH LINK</button>
+        </div>
+        <div id="linkList" class="linkList"></div>
+      </div>
+    </section>
+
+    <section id="batchPreview" class="batchPreview card hidden">
+      <div class="batchHead"><strong>BATCH REVIEW</strong><span id="batchCount">0 items</span></div>
+      <div id="batchItems" class="batchItems"></div>
+    </section>
+
+    <section id="dropZone" class="uploadZone card">
+      <div class="uploadIcon">⬆</div>
+      <div>
+        <h2>UPLOAD FILE AUDIO / VIDEO</h2>
+        <p>Drag & drop file ke sini, atau klik tombol upload. File akan dikonversi ke .ogg dengan setting speed dan amplify di bawah.</p>
+        <small>Support: MP3, WAV, M4A, OGG, MP4, WEBM, MOV, MKV. Maksimal mengikuti MAX_UPLOAD_MB di .env.</small>
+      </div>
+      <label class="chooseBtn">PILIH FILES<input id="fileInput2" type="file" multiple accept="audio/*,video/*,.mp3,.wav,.m4a,.ogg,.mp4,.webm,.mov,.mkv" /></label>
+    </section>
+
+    <section class="preview card">
+      <img id="cover" src="/placeholder.svg" alt="cover" />
+      <div class="track">
+        <span id="badge">READY</span>
+        <h1 id="title">Audio Converter</h1>
+        <p id="note">Paste link YouTube/direct audio/Spotify preview atau upload file, lalu convert ke .ogg.</p>
+      </div>
+      <button id="convertBtn" class="convert">⬇ CONVERTER</button>
+    </section>
+
+    <section class="advanced card">
+      <header class="advHead">
+        <div><span class="gear">⚙</span><strong>ADVANCED SETTINGS</strong><small>CHIPMUNK, DEEP VOICE, CLEAN MASTER OGG</small></div>
+        <div class="chips"><span id="speedChip">2.3x</span><span id="gainChip">-4dB</span><button id="toggleAdv">⌃</button></div>
+      </header>
+      <div id="advBody" class="advBody">
+        <div class="sliderPanel">
+          <div class="rowTitle"><span>⏱ SPEED AUDIO</span><b id="speedValue">2.3x</b></div>
+          <input id="speed" type="range" min="0.25" max="4" step="0.01" value="2.3" />
+          <div class="rangeLabels"><span>SLOW</span><span>SAFE ZONE (2.3X+)</span><span>FAST</span></div>
+        </div>
+        <div class="sliderPanel">
+          <div class="rowTitle"><span>🔊 AMPLIFY</span><b id="gainValue">-4dB</b></div>
+          <input id="gain" type="range" min="-20" max="20" step="1" value="-4" />
+          <div class="rangeLabels"><span>-20DB</span><span>ANTI-CLIP LIMITER ON</span><span>+20DB</span></div>
+        </div>
+
+        <div class="optionGrid">
+          <label class="optionCard active" id="chipmunkCard">
+            <input type="radio" name="pitchMode" value="chipmunk" checked />
+            <strong>CHIPMUNK / DEEP</strong>
+            <small>Speed naik = vokal tinggi. Speed turun = vokal rendah.</small>
+          </label>
+          <label class="optionCard" id="tempoCard">
+            <input type="radio" name="pitchMode" value="tempo" />
+            <strong>TEMPO ONLY</strong>
+            <small>Speed berubah, pitch vokal tetap natural.</small>
+          </label>
+          <label class="checkCard">
+            <input id="normalize" type="checkbox" checked />
+            <span><strong>CLEAN / ANTI KRESEK</strong><small>Limiter + dynamic normalize agar tidak clipping.</small></span>
+          </label>
+          <label class="checkCard">
+            <input id="qualityMax" type="checkbox" checked />
+            <span><strong>MAX OGG QUALITY</strong><small>Bitrate lebih besar, suara lebih halus.</small></span>
+          </label>
+          <label class="checkCard">
+            <input id="cleanMaster" type="checkbox" checked />
+            <span><strong>CLEAN MASTER</strong><small>Noise reduction ringan + compressor lembut. Bukan bypass copyright detection.</small></span>
+          </label>
+        </div>
+        <div class="recommended"><span>• RECOMMENDED PLAYBACKSPEED:</span><b id="robloxValue">0.4348</b></div>
+      </div>
+    </section>
+
+    <div id="alert" class="alert hidden"></div>
+
+    <section id="result" class="result card hidden">
+      <div class="resultHead">
+        <div><span class="readyTag">READY</span><small id="jobId"></small><h2 id="resultTitle">Result</h2></div>
+        <button id="resetBtn" class="round">↻</button>
+      </div>
+      <p class="success">1 FILE CONVERTED SUCCESSFULLY</p>
+      <div class="fileRow">
+        <div class="fileIcon">♫</div>
+        <div class="fileInfo"><strong id="fileName">audio.ogg</strong><small>FORMAT: OGG</small></div>
+        <a id="saveBtn" class="save" download>⬇ SAVE</a>
+        <button id="uploadRobloxBtn" class="upload">⇧ UPLOAD</button>
+        <input id="shareWith" placeholder="Friend Roblox ID (optional)" style="margin-left:12px;padding:8px 10px;border-radius:8px;border:1px solid #333;background:#121212;color:#fff;width:180px;" />
+        <button id="uploadAllBtn" class="uploadAll">⇧ UPLOAD ALL</button>
+      </div>
+      <div id="batchResultList" class="batchResultList"></div>
+      <div id="uploadStatus" class="uploadStatus"></div>
+      <div id="partsList" class="partsList"></div>
+      <audio id="player" controls></audio>
+      <div class="playbackRow"><span>ROBLOX PLAYBACKSPEED:</span><button id="copySpeed"><b id="finalSpeed">0.4348</b> ⧉</button></div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
