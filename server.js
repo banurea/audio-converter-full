@@ -1669,6 +1669,10 @@ app.post('/api/upload-roblox', upload.single('file'), async (req, res) => {
   }
 });
 
+app.get('/health', (req, res) => {
+  res.json({ ok: true, status: 'healthy', port: PORT });
+});
+
 app.use((err, req, res, next) => {
   if (err.code === 'LIMIT_FILE_SIZE') {
     return res.status(413).json({
@@ -1683,8 +1687,8 @@ app.use((err, req, res, next) => {
 
 function startServer(port, attempts = 10) {
   return new Promise((resolve, reject) => {
-    const server = app.listen(port, () => {
-      console.log(`Audio converter running: http://localhost:${port}`);
+    const server = app.listen(port, '0.0.0.0', () => {
+      console.log(`Audio converter running: http://0.0.0.0:${port}`);
       resolve(server);
     });
 
