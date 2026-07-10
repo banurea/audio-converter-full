@@ -51,42 +51,54 @@ let lastConvertedFiles = [];
 // hide Upload All by default
 if (uploadAllBtn) uploadAllBtn.style.display = 'none';
 
-async function loadRobloxSettingsFromServer() {
-  if (!robloxApiKeyInput || !robloxCreatorIdInput || !robloxCreatorTypeSelect || !robloxUploadUrlInput || !robloxPermissionUrlInput) return;
-  try {
-    const res = await fetch('/api/roblox-settings');
-    const data = await res.json();
-    if (!res.ok || !data.ok) throw new Error(data.error || 'Gagal memuat settings Roblox');
-    const settings = data.settings || {};
-    robloxApiKeyInput.value = settings.apiKey || '';
-    robloxCreatorIdInput.value = settings.creatorId || '';
-    robloxCreatorTypeSelect.value = settings.creatorType || 'user';
-    robloxUploadUrlInput.value = settings.uploadUrl || 'https://apis.roblox.com/assets/v1/assets';
-    robloxPermissionUrlInput.value = settings.setPermissionUrl || '';
-  } catch (err) {
-    if (robloxSettingsStatus) robloxSettingsStatus.textContent = err.message;
+const LOCAL_STORAGE_ROBLOX_KEY = 'robloxSettings';
+
+function getLocalRobloxSettings() {
+  if (!robloxApiKeyInput || !robloxCreatorIdInput || !robloxCreatorTypeSelect || !robloxUploadUrlInput || !robloxPermissionUrlInput) {
+    return {
+      apiKey: '',
+      creatorId: '',
+      creatorType: 'user',
+      uploadUrl: 'https://apis.roblox.com/assets/v1/assets',
+      setPermissionUrl: ''
+    };
   }
+
+  return {
+    apiKey: String(robloxApiKeyInput.value || '').trim(),
+    creatorId: String(robloxCreatorIdInput.value || '').trim(),
+    creatorType: String(robloxCreatorTypeSelect.value || 'user').trim(),
+    uploadUrl: String(robloxUploadUrlInput.value || '').trim() || 'https://apis.roblox.com/assets/v1/assets',
+    setPermissionUrl: String(robloxPermissionUrlInput.value || '').trim()
+  };
 }
 
-async function saveRobloxSettingsToServer() {
+function loadRobloxSettingsFromLocalStorage() {
+  if (!robloxApiKeyInput || !robloxCreatorIdInput || !robloxCreatorTypeSelect || !robloxUploadUrlInput || !robloxPermissionUrlInput) return;
+
+  let stored = {};
+  try {
+    const raw = window.localStorage.getItem(LOCAL_STORAGE_ROBLOX_KEY);
+    stored = raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    stored = {};
+  }
+
+  robloxApiKeyInput.value = stored.apiKey || '';
+  robloxCreatorIdInput.value = stored.creatorId || '';
+  robloxCreatorTypeSelect.value = stored.creatorType || 'user';
+  robloxUploadUrlInput.value = stored.uploadUrl || 'https://apis.roblox.com/assets/v1/assets';
+  robloxPermissionUrlInput.value = stored.setPermissionUrl || '';
+}
+
+function saveRobloxSettingsToLocalStorage() {
   if (!robloxApiKeyInput || !robloxCreatorIdInput || !robloxCreatorTypeSelect || !robloxUploadUrlInput || !robloxPermissionUrlInput || !robloxSettingsStatus) return;
   robloxSettingsStatus.textContent = 'Menyimpan...';
   try {
-    const res = await fetch('/api/roblox-settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        apiKey: robloxApiKeyInput.value.trim(),
-        creatorId: robloxCreatorIdInput.value.trim(),
-        creatorType: robloxCreatorTypeSelect.value,
-        uploadUrl: robloxUploadUrlInput.value.trim(),
-        setPermissionUrl: robloxPermissionUrlInput.value.trim()
-      })
-    });
-    const data = await res.json();
-    if (!res.ok || !data.ok) throw new Error(data.error || 'Gagal menyimpan settings Roblox');
+    const settings = getLocalRobloxSettings();
+    window.localStorage.setItem(LOCAL_STORAGE_ROBLOX_KEY, JSON.stringify(settings));
     robloxSettingsStatus.textContent = 'Tersimpan. Bisa diubah lagi kapan saja.';
-    showAlert('Settings Roblox tersimpan', true);
+    showAlert('Settings Roblox tersimpan secara lokal di perangkat ini.', true);
   } catch (err) {
     robloxSettingsStatus.textContent = err.message;
     showAlert(err.message);
@@ -352,7 +364,7 @@ function syncSliders() {
 speed.addEventListener('input', syncSliders);
 gain.addEventListener('input', syncSliders);
 syncSliders();
-loadRobloxSettingsFromServer();
+loadRobloxSettingsFromLocalStorage();
 
 if (addLinkBtn) {
   addLinkBtn.addEventListener('click', () => addLinkRow());
@@ -541,12 +553,14 @@ convertBtn.addEventListener('click', async () => {
 
   if (selectedFiles.length) {
     selectedFiles.forEach((file) => form.append('files', file));
+    form.append('robloxSettings', JSON.stringify(getLocalRobloxSettings()));
     requestOptions.body = form;
   } else if (batchLinks.length > 0) {
     loadAllBatchMetadata();
     isBatchRequest = true;
     const payload = {
-      items: batchLinks.map((link) => ({ url: link }))
+      items: batchLinks.map((link) => ({ url: link })),
+      robloxSettings: getLocalRobloxSettings()
     };
     payload.speed = speed.value;
     payload.gainDb = gain.value;
@@ -559,6 +573,7 @@ convertBtn.addEventListener('click', async () => {
     requestOptions.body = JSON.stringify(payload);
   } else {
     form.append('url', url);
+    form.append('robloxSettings', JSON.stringify(getLocalRobloxSettings()));
     requestOptions.body = form;
   }
 
@@ -619,7 +634,7 @@ $('copySpeed').addEventListener('click', async () => {
 });
 
 if (saveRobloxSettingsBtn) {
-  saveRobloxSettingsBtn.addEventListener('click', saveRobloxSettingsToServer);
+  saveRobloxSettingsBtn.addEventListener('click', saveRobloxSettingsToLocalStorage);
 }
 
 $('uploadRobloxBtn').addEventListener('click', async () => {
@@ -635,6 +650,7 @@ $('uploadRobloxBtn').addEventListener('click', async () => {
   if (pickedFile && pickedFile.name.toLowerCase().endsWith('.ogg')) {
     form.append('file', pickedFile);
     form.append('title', currentMeta.title || pickedFile.name.replace(/\.[^.]+$/, ''));
+    form.append('robloxSettings', JSON.stringify(getLocalRobloxSettings()));
     isDirectOggUpload = true;
   }
 
@@ -643,13 +659,15 @@ $('uploadRobloxBtn').addEventListener('click', async () => {
     if (isDirectOggUpload) {
       res = await fetch('/api/upload-roblox', { method: 'POST', body: form });
     } else if (lastConvertedFileName && (!lastConvertedFiles || lastConvertedFiles.length <= 1)) {
+      const payload = {
+        fileName: lastConvertedFileName,
+        title: currentMeta.title || 'audio',
+        robloxSettings: getLocalRobloxSettings()
+      };
       res = await fetch('/api/upload-roblox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileName: lastConvertedFileName,
-          title: currentMeta.title || 'audio'
-        })
+        body: JSON.stringify(payload)
       });
     } else if (lastConvertedFiles && lastConvertedFiles.length > 1) {
       // for multi-part, prefer Upload All button; here just notify
@@ -747,7 +765,7 @@ async function uploadPart(fileName, btn) {
     // collect shareWith value (support comma-separated list)
     const raw = shareWithInput?.value?.trim();
     const shareWithIds = raw ? raw.split(/[,\s]+/).filter(Boolean) : null;
-    const body = { fileName, title: titleForPart };
+    const body = { fileName, title: titleForPart, robloxSettings: getLocalRobloxSettings() };
     if (shareWithIds && shareWithIds.length) body.shareWithIds = shareWithIds;
 
     const res = await fetch('/api/upload-roblox', {
@@ -793,7 +811,7 @@ $('uploadAllBtn').addEventListener('click', async () => {
     const fileNames = lastConvertedFiles.map(p => p.fileName);
     const raw = shareWithInput?.value?.trim();
     const shareWithIds = raw ? raw.split(/[,\s]+/).filter(Boolean) : null;
-    const payload = { fileNames };
+    const payload = { fileNames, robloxSettings: getLocalRobloxSettings() };
     if (shareWithIds && shareWithIds.length) payload.shareWithIds = shareWithIds;
 
     const res = await fetch('/api/upload-roblox', {

@@ -8,7 +8,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const { spawn } = require('child_process');
 const { nanoid } = require('nanoid');
-const { loadRobloxSettings, saveRobloxSettings } = require('./lib/roblox-settings');
+const { loadRobloxSettings, saveRobloxSettings, resolveRobloxSettings } = require('./lib/roblox-settings');
 
 const app = express();
 
@@ -402,26 +402,26 @@ async function cleanup(filePath) {
  * =========================
  */
 
-function assertRobloxConfig() {
-  if (!process.env.ROBLOX_UPLOAD_URL) {
-    throw new Error('ROBLOX_UPLOAD_URL belum diisi di .env.');
+function assertRobloxConfig(settings) {
+  if (!settings || !settings.uploadUrl) {
+    throw new Error('ROBLOX_UPLOAD_URL belum diisi di .env atau settings Roblox Anda.');
   }
 
-  if (!process.env.ROBLOX_API_KEY) {
-    throw new Error('ROBLOX_API_KEY belum diisi di .env.');
+  if (!settings.apiKey) {
+    throw new Error('ROBLOX_API_KEY belum diisi di .env atau settings Roblox Anda.');
   }
 
-  if (!process.env.ROBLOX_CREATOR_ID) {
-    throw new Error('ROBLOX_CREATOR_ID belum diisi di .env.');
+  if (!settings.creatorId) {
+    throw new Error('ROBLOX_CREATOR_ID belum diisi di .env atau settings Roblox Anda.');
   }
 }
 
-function getRobloxCreator() {
-  const creatorType = String(process.env.ROBLOX_CREATOR_TYPE || 'user').toLowerCase();
-  const creatorId = String(process.env.ROBLOX_CREATOR_ID || '').trim();
+function getRobloxCreator(settings) {
+  const creatorType = String(settings.creatorType || 'user').toLowerCase();
+  const creatorId = String(settings.creatorId || '').trim();
 
   if (!creatorId) {
-    throw new Error('ROBLOX_CREATOR_ID belum diisi di .env.');
+    throw new Error('ROBLOX_CREATOR_ID belum diisi di .env atau settings Roblox Anda.');
   }
 
   if (creatorType === 'group') {
@@ -461,8 +461,35 @@ function getRobloxOperationUrl(operation) {
   return `https://apis.roblox.com/assets/v1/operations/${encodeURIComponent(value)}`;
 }
 
-async function pollRobloxOperation(operation) {
-  const apiKey = process.env.ROBLOX_API_KEY;
+function parseJsonValue(value) {
+  if (typeof value !== 'string') {
+    return value || {};
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function extractRobloxSettingsFromRequest(req) {
+  const body = req.body || {};
+  const payload = body.robloxSettings ? parseJsonValue(body.robloxSettings) : body;
+
+  return {
+    apiKey: payload.robloxApiKey ?? payload.apiKey ?? '',
+    creatorId: payload.robloxCreatorId ?? payload.creatorId ?? '',
+    creatorType: payload.robloxCreatorType ?? payload.creatorType ?? 'user',
+    uploadUrl: payload.robloxUploadUrl ?? payload.uploadUrl ?? '',
+    setPermissionUrl: payload.robloxPermissionUrl ?? payload.setPermissionUrl ?? ''
+  };
+}
+
+async function pollRobloxOperation(operation, settings = {}) {
+  const resolved = resolveRobloxSettings(settings, { rootDir: ROOT });
+  const apiKey = resolved.apiKey;
   const operationUrl = getRobloxOperationUrl(operation);
 
   if (!operationUrl) {
@@ -516,8 +543,9 @@ function getAudioMimeType(filePath) {
   return 'application/octet-stream';
 }
 
-async function uploadAudioToRoblox(filePath, displayName, description = '') {
-  assertRobloxConfig();
+async function uploadAudioToRoblox(filePath, displayName, description = '', robloxSettings = {}) {
+  const settings = resolveRobloxSettings(robloxSettings, { rootDir: ROOT });
+  assertRobloxConfig(settings);
 
   if (!filePath || !fs.existsSync(filePath)) {
     throw new Error('File untuk upload Roblox tidak ditemukan.');
@@ -527,8 +555,8 @@ async function uploadAudioToRoblox(filePath, displayName, description = '') {
     throw new Error('Hanya file OGG yang didukung untuk upload Roblox.');
   }
 
-  const uploadUrl = process.env.ROBLOX_UPLOAD_URL.replace(/\/$/, '');
-  const apiKey = process.env.ROBLOX_API_KEY;
+  const uploadUrl = settings.uploadUrl.replace(/\/$/, '');
+  const apiKey = settings.apiKey;
 
   const stats = await fsp.stat(filePath);
 
@@ -542,7 +570,7 @@ async function uploadAudioToRoblox(filePath, displayName, description = '') {
     displayName: sanitizeRobloxName(displayName),
     description: sanitizeRobloxText(description, 250, 'Uploaded automatically'),
     creationContext: {
-      creator: getRobloxCreator()
+      creator: getRobloxCreator(settings)
     }
   };
 
@@ -573,7 +601,7 @@ async function uploadAudioToRoblox(filePath, displayName, description = '') {
     throw new Error(`Upload Roblox gagal: ${JSON.stringify(data)}`);
   }
 
-  const finalOperation = data.done ? data : await pollRobloxOperation(data);
+  const finalOperation = data.done ? data : await pollRobloxOperation(data, settings);
 
   const assetId =
     extractRobloxAssetId(finalOperation) ||
@@ -587,10 +615,11 @@ async function uploadAudioToRoblox(filePath, displayName, description = '') {
   };
 }
 
-async function setRobloxPermissions(assetId, userIds) {
+async function setRobloxPermissions(assetId, userIds, robloxSettings = {}) {
   if (!assetId || !userIds || !userIds.length) return { ok: false, error: 'No assetId or userIds' };
-  const permUrlTemplate = process.env.ROBLOX_SET_PERMISSION_URL; // e.g. https://apis.roblox.com/assets/v1/assets/{assetId}/permissions
-  const apiKey = process.env.ROBLOX_API_KEY;
+  const settings = resolveRobloxSettings(robloxSettings, { rootDir: ROOT });
+  const permUrlTemplate = settings.setPermissionUrl; // e.g. https://apis.roblox.com/assets/v1/assets/{assetId}/permissions
+  const apiKey = settings.apiKey;
 
   if (!permUrlTemplate) return { ok: false, error: 'ROBLOX_SET_PERMISSION_URL not configured' };
 
@@ -709,6 +738,7 @@ function buildConvertTask(raw, files, defaultOptions = {}) {
     description: raw.description || defaultOptions.description || 'Uploaded from automatic audio converter',
     shareWith: raw.shareWith || defaultOptions.shareWith,
     shareWithIds: raw.shareWithIds || defaultOptions.shareWithIds,
+    robloxSettings: raw.robloxSettings || defaultOptions.robloxSettings || {},
     originalIndex: raw.originalIndex || null
   };
 
@@ -955,11 +985,11 @@ async function convertSingleTask(task) {
           const uploads = [];
           for (const p of parts) {
             try {
-              const r = await uploadAudioToRoblox(path.join(OUT_DIR, p.fileName), safeTitle, task.description);
+              const r = await uploadAudioToRoblox(path.join(OUT_DIR, p.fileName), safeTitle, task.description, task.robloxSettings);
               if ((task.shareWith || task.shareWithIds) && r?.assetId) {
                 const shareIds = Array.isArray(task.shareWithIds) ? task.shareWithIds : (task.shareWith ? [task.shareWith] : []);
                 if (shareIds.length) {
-                  const permRes = await setRobloxPermissions(r.assetId, shareIds);
+                  const permRes = await setRobloxPermissions(r.assetId, shareIds, task.robloxSettings);
                   uploads.push({ ok: true, fileName: p.fileName, roblox: r, permissions: permRes });
                 } else {
                   uploads.push({ ok: true, fileName: p.fileName, roblox: r });
@@ -973,11 +1003,11 @@ async function convertSingleTask(task) {
           }
           roblox = { batch: uploads };
         } else {
-          roblox = await uploadAudioToRoblox(path.join(OUT_DIR, parts[0].fileName), safeTitle, task.description);
+          roblox = await uploadAudioToRoblox(path.join(OUT_DIR, parts[0].fileName), safeTitle, task.description, task.robloxSettings);
           if ((task.shareWith || task.shareWithIds) && roblox?.assetId) {
             const shareIds = Array.isArray(task.shareWithIds) ? task.shareWithIds : (task.shareWith ? [task.shareWith] : []);
             if (shareIds.length) {
-              const permRes = await setRobloxPermissions(roblox.assetId, shareIds);
+              const permRes = await setRobloxPermissions(roblox.assetId, shareIds, task.robloxSettings);
               roblox.permissions = permRes;
             }
           }
@@ -1376,6 +1406,7 @@ app.post('/api/convert', upload.array('files', 20), async (req, res) => {
         await cleanup(path.join(TMP_DIR, `${jobId}.wav`));
       }
 
+      const robloxSettings = extractRobloxSettingsFromRequest(req);
       let roblox = null;
       if (uploadRoblox) {
         try {
@@ -1383,11 +1414,11 @@ app.post('/api/convert', upload.array('files', 20), async (req, res) => {
             const uploads = [];
             for (const p of parts) {
               try {
-                const r = await uploadAudioToRoblox(path.join(OUT_DIR, p.fileName), safeTitle, req.body.description || 'Uploaded from automatic audio converter');
+                const r = await uploadAudioToRoblox(path.join(OUT_DIR, p.fileName), safeTitle, req.body.description || 'Uploaded from automatic audio converter', robloxSettings);
                 if ((req.body.shareWith || req.body.shareWithIds) && r?.assetId) {
                   const shareIds = Array.isArray(req.body.shareWithIds) ? req.body.shareWithIds : (req.body.shareWith ? [req.body.shareWith] : []);
                   if (shareIds.length) {
-                    const permRes = await setRobloxPermissions(r.assetId, shareIds);
+                    const permRes = await setRobloxPermissions(r.assetId, shareIds, robloxSettings);
                     uploads.push({ ok: true, fileName: p.fileName, roblox: r, permissions: permRes });
                   } else {
                     uploads.push({ ok: true, fileName: p.fileName, roblox: r });
@@ -1401,11 +1432,11 @@ app.post('/api/convert', upload.array('files', 20), async (req, res) => {
             }
             roblox = { batch: uploads };
           } else {
-            roblox = await uploadAudioToRoblox(path.join(OUT_DIR, parts[0].fileName), safeTitle, req.body.description || 'Uploaded from automatic audio converter');
+            roblox = await uploadAudioToRoblox(path.join(OUT_DIR, parts[0].fileName), safeTitle, req.body.description || 'Uploaded from automatic audio converter', robloxSettings);
             if ((req.body.shareWith || req.body.shareWithIds) && roblox?.assetId) {
               const shareIds = Array.isArray(req.body.shareWithIds) ? req.body.shareWithIds : (req.body.shareWith ? [req.body.shareWith] : []);
               if (shareIds.length) {
-                const permRes = await setRobloxPermissions(roblox.assetId, shareIds);
+                const permRes = await setRobloxPermissions(roblox.assetId, shareIds, robloxSettings);
                 roblox.permissions = permRes;
               }
             }
@@ -1457,7 +1488,8 @@ app.post('/api/convert', upload.array('files', 20), async (req, res) => {
       uploadRoblox: parseBooleanFlag(req.body.uploadRoblox),
       description: req.body.description || 'Uploaded from automatic audio converter',
       shareWith: req.body.shareWith,
-      shareWithIds: req.body.shareWithIds
+      shareWithIds: req.body.shareWithIds,
+      robloxSettings: extractRobloxSettingsFromRequest(req)
     };
 
     const tasks = [];
@@ -1479,7 +1511,8 @@ app.post('/api/convert', upload.array('files', 20), async (req, res) => {
           uploadRoblox: req.body.uploadRoblox,
           description: req.body.description,
           shareWith: req.body.shareWith,
-          shareWithIds: req.body.shareWithIds
+          shareWithIds: req.body.shareWithIds,
+          robloxSettings: extractRobloxSettingsFromRequest(req)
         };
         tasks.push(buildConvertTask(raw, [file], defaultOptions));
       });
@@ -1533,7 +1566,8 @@ app.post('/api/convert-batch', upload.array('files', 20), async (req, res) => {
           uploadRoblox: req.body.uploadRoblox,
           description: req.body.description,
           shareWith: req.body.shareWith,
-          shareWithIds: req.body.shareWithIds
+          shareWithIds: req.body.shareWithIds,
+          robloxSettings: extractRobloxSettingsFromRequest(req)
         };
         const task = buildConvertTask(raw, [file], defaultOptions);
         tasks.push(task);
@@ -1580,6 +1614,7 @@ app.post('/api/upload-roblox', upload.single('file'), async (req, res) => {
       displayName = req.body.title || path.parse(req.file.originalname || 'audio').name;
     } else if (req.body.fileNames && Array.isArray(req.body.fileNames)) {
       // Batch upload by fileNames array
+      const robloxSettings = extractRobloxSettingsFromRequest(req);
       const results = [];
       for (const fnameRaw of req.body.fileNames) {
         const fname = path.basename(String(fnameRaw || ''));
@@ -1595,11 +1630,16 @@ app.post('/api/upload-roblox', upload.single('file'), async (req, res) => {
         }
 
         try {
-          const r = await uploadAudioToRoblox(fpath, req.body.title || path.parse(fname).name, req.body.description || 'Uploaded from automatic audio converter');
+          const r = await uploadAudioToRoblox(
+            fpath,
+            req.body.title || path.parse(fname).name,
+            req.body.description || 'Uploaded from automatic audio converter',
+            robloxSettings
+          );
           // apply permissions if requested
           if ((req.body.shareWith || req.body.shareWithIds) && r?.assetId) {
             const shareIds = Array.isArray(req.body.shareWithIds) ? req.body.shareWithIds : (req.body.shareWith ? [req.body.shareWith] : []);
-            const permRes = shareIds.length ? await setRobloxPermissions(r.assetId, shareIds) : null;
+            const permRes = shareIds.length ? await setRobloxPermissions(r.assetId, shareIds, robloxSettings) : null;
             results.push({ fileName: fname, ok: true, assetId: r.assetId, robloxAssetUrl: r.robloxAssetUrl, permissions: permRes });
           } else {
             results.push({ fileName: fname, ok: true, assetId: r.assetId, robloxAssetUrl: r.robloxAssetUrl });
@@ -1635,17 +1675,19 @@ app.post('/api/upload-roblox', upload.single('file'), async (req, res) => {
       });
     }
 
+    const robloxSettings = extractRobloxSettingsFromRequest(req);
     const result = await uploadAudioToRoblox(
       filePath,
       displayName,
-      req.body.description || 'Uploaded from Dodo'
+      req.body.description || 'Uploaded from Dodo',
+      robloxSettings
     );
 
     // apply permissions if provided
     if ((req.body.shareWith || req.body.shareWithIds) && result?.assetId) {
       const shareIds = Array.isArray(req.body.shareWithIds) ? req.body.shareWithIds : (req.body.shareWith ? [req.body.shareWith] : []);
       if (shareIds.length) {
-        const permRes = await setRobloxPermissions(result.assetId, shareIds);
+        const permRes = await setRobloxPermissions(result.assetId, shareIds, robloxSettings);
         result.permissions = permRes;
       }
     }
