@@ -774,6 +774,23 @@ async function convertSingleTask(task) {
       title = title || path.parse(localFile.originalname).name;
     } else if (task.url) {
       const url = String(task.url || '');
+      if (isYoutubeUrl(url)) {
+        try {
+          const { stdout } = await runYtDlp(url, ['--dump-json', '--no-playlist', url]);
+          const meta = JSON.parse(stdout || '{}');
+          if (!meta || !meta.title) {
+            throw new Error('YouTube memblokir ekstraksi metadata dari server ini.');
+          }
+        } catch (err) {
+          return {
+            ok: false,
+            error: getFriendlyYoutubeError(err && err.message),
+            jobId,
+            url
+          };
+        }
+      }
+
       if (isSpotifyUrl(url)) {
         const meta = await getSpotifyTrackInfo(url);
 
