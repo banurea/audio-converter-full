@@ -5,7 +5,7 @@ WORKDIR /app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg python3 python3-pip curl \
-    && pip3 install --no-cache-dir yt-dlp \
+    && python3 -m pip install --no-cache-dir --upgrade yt-dlp \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./

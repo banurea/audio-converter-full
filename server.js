@@ -50,6 +50,21 @@ function bin(name) {
   return resolved.command;
 }
 
+function getYtDlpArgs(url = '', extraArgs = []) {
+  const args = ['--no-update'];
+
+  if (isYoutubeUrl(url)) {
+    args.push('--js-runtimes', 'nodejs');
+    args.push('--extractor-args', 'youtube:player_client=web');
+  }
+
+  return [...args, ...extraArgs];
+}
+
+function runYtDlp(url, args = [], options = {}) {
+  return run(bin('yt-dlp'), getYtDlpArgs(url, args), options);
+}
+
 function run(cmd, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
@@ -790,7 +805,7 @@ async function convertSingleTask(task) {
 
         if (isYoutubeUrl(url) && !task.title) {
           try {
-            const { stdout: metaOut } = await run(bin('yt-dlp'), ['--dump-json', '--no-playlist', url]);
+            const { stdout: metaOut } = await runYtDlp(url, ['--dump-json', '--no-playlist', url]);
             const meta = JSON.parse(metaOut);
             title = normalizeBatchTitle(meta.title || 'YouTube audio', url);
           } catch (err) {
@@ -806,7 +821,7 @@ async function convertSingleTask(task) {
 
         try {
           const argsExtract = [...ytdlpArgsBase, '--extract-audio', '--audio-format', 'wav', '-o', `${tempBase}.%(ext)s`];
-          await run(bin('yt-dlp'), [...argsExtract, cleanUrl]);
+          await runYtDlp(url, [...argsExtract, cleanUrl]);
 
           if (fs.existsSync(wavPath)) {
             inputPath = wavPath;
@@ -827,7 +842,7 @@ async function convertSingleTask(task) {
               argsVideo.push('--add-header', 'Referer: https://www.tiktok.com/');
             }
 
-            await run(bin('yt-dlp'), [...argsVideo, cleanUrl]);
+            await runYtDlp(url, [...argsVideo, cleanUrl]);
             const files = fs.readdirSync(TMP_DIR).filter(f => f.startsWith(jobId + '.'));
             let produced = null;
             if (files.length) {
@@ -847,7 +862,7 @@ async function convertSingleTask(task) {
                 argsAudioOnly.push('--add-header', 'Referer: https://www.tiktok.com/');
               }
 
-              await run(bin('yt-dlp'), [...argsAudioOnly, cleanUrl]);
+              await runYtDlp(url, [...argsAudioOnly, cleanUrl]);
               const files2 = fs.readdirSync(TMP_DIR).filter(f => f.startsWith(jobId + '.'));
               const audioFile = files2.find(f => /\.(m4a|mp3|webm|wav|opus|ogg|aac)$/i.test(f)) || files2[0];
               if (audioFile) {
@@ -872,7 +887,7 @@ async function convertSingleTask(task) {
     // ensure we have a meaningful title before creating filenames/parts
     try {
       if (task.url && isYoutubeUrl(task.url)) {
-        const { stdout: metaOut } = await run(bin('yt-dlp'), ['--dump-json', '--no-playlist', task.url]);
+        const { stdout: metaOut } = await runYtDlp(task.url, ['--dump-json', '--no-playlist', task.url]);
         const meta = JSON.parse(metaOut || '{}');
         if (meta && meta.title) {
           // prefer existing non-placeholder title, otherwise use metadata
@@ -904,7 +919,7 @@ async function convertSingleTask(task) {
           argsAudioOnly.push('--add-header', 'Referer: https://www.tiktok.com/');
         }
 
-        await run(bin('yt-dlp'), [...argsAudioOnly, cleanUrlGlobal]);
+        await runYtDlp(task.url, [...argsAudioOnly, cleanUrlGlobal]);
         const produced = fs.readdirSync(TMP_DIR).filter(f => f.startsWith(jobId + '.'));
         const audioFile = produced.find(f => /\.(m4a|mp3|webm|wav|opus|ogg|aac)$/i.test(f));
         if (audioFile) {
@@ -1087,7 +1102,7 @@ app.post('/api/metadata', async (req, res) => {
     }
 
     if (isYoutubeUrl(url)) {
-      const { stdout } = await run(bin('yt-dlp'), [
+      const { stdout } = await runYtDlp(url, [
         '--dump-json',
         '--no-playlist',
         url
@@ -1104,7 +1119,7 @@ app.post('/api/metadata', async (req, res) => {
     }
 
     if (isTiktokUrl(url)) {
-      const { stdout } = await run(bin('yt-dlp'), [
+      const { stdout } = await runYtDlp(url, [
         '--dump-json',
         '--no-playlist',
         url
@@ -1224,7 +1239,7 @@ app.post('/api/convert', upload.array('files', 20), async (req, res) => {
 
           if (isYoutubeUrl(url) && !req.body.title) {
             try {
-              const { stdout: metaOut } = await run(bin('yt-dlp'), ['--dump-json', '--no-playlist', url]);
+              const { stdout: metaOut } = await runYtDlp(url, ['--dump-json', '--no-playlist', url]);
               const meta = JSON.parse(metaOut);
               if (meta && meta.title) {
                 title = normalizeTitle(meta.title, 5);
@@ -1247,7 +1262,7 @@ app.post('/api/convert', upload.array('files', 20), async (req, res) => {
 
           try {
             const argsExtract = [...ytdlpArgsBase, '--extract-audio', '--audio-format', 'wav', '-o', `${tempBase}.%(ext)s`];
-            await run(bin('yt-dlp'), [...argsExtract, cleanUrl]);
+            await runYtDlp(url, [...argsExtract, cleanUrl]);
 
             if (fs.existsSync(wavPath)) {
               inputPath = wavPath;
@@ -1268,7 +1283,7 @@ app.post('/api/convert', upload.array('files', 20), async (req, res) => {
                 argsVideo.push('--add-header', 'Referer: https://www.tiktok.com/');
               }
 
-              await run(bin('yt-dlp'), [...argsVideo, cleanUrl]);
+              await runYtDlp(url, [...argsVideo, cleanUrl]);
               const files2 = fs.readdirSync(TMP_DIR).filter(f => f.startsWith(jobId + '.'));
               let produced = null;
               if (files2.length) {
@@ -1288,7 +1303,7 @@ app.post('/api/convert', upload.array('files', 20), async (req, res) => {
                   argsAudioOnly.push('--add-header', 'Referer: https://www.tiktok.com/');
                 }
 
-                await run(bin('yt-dlp'), [...argsAudioOnly, cleanUrl]);
+                await runYtDlp(url, [...argsAudioOnly, cleanUrl]);
                 const files3 = fs.readdirSync(TMP_DIR).filter(f => f.startsWith(jobId + '.'));
                 const audioFile = files3.find(f => /\.(m4a|mp3|webm|wav|opus|ogg|aac)$/i.test(f)) || files3[0];
                 if (audioFile) {
@@ -1326,7 +1341,7 @@ app.post('/api/convert', upload.array('files', 20), async (req, res) => {
             argsAudioOnly.push('--add-header', 'Referer: https://www.tiktok.com/');
           }
 
-          await run(bin('yt-dlp'), [...argsAudioOnly, cleanUrlGlobal]);
+          await runYtDlp(url, [...argsAudioOnly, cleanUrlGlobal]);
 
           const produced = fs.readdirSync(TMP_DIR).filter(f => f.startsWith(jobId + '.'));
           const audioFile = produced.find(f => /\.(m4a|mp3|webm|wav|opus|ogg|aac)$/i.test(f));
