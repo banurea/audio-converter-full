@@ -47,6 +47,9 @@ let batchLinkCounter = 0;
 let currentMeta = { title: 'audio' };
 let lastConvertedFileName = null;
 let lastConvertedFiles = [];
+let metadataFetchToken = 0;
+let metadataLoadingUrl = null;
+let metadataDebounceTimer = null;
 
 // hide Upload All by default
 if (uploadAllBtn) uploadAllBtn.style.display = 'none';
@@ -114,6 +117,51 @@ function showAlert(message, ok = false) {
 }
 
 function hideAlert() { alertBox.classList.add('hidden'); }
+
+function getFallbackTitle(value = '', fallback = 'audio') {
+  const raw = String(value || '').trim();
+  if (!raw) return fallback;
+
+  try {
+    const parsed = new URL(raw);
+    const slug = parsed.pathname.split('/').filter(Boolean).pop() || '';
+    const cleaned = decodeURIComponent(slug || parsed.hostname || fallback)
+      .replace(/\.[^.]+$/, '')
+      .replace(/[-_]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return cleaned || fallback;
+  } catch (_) {
+    const cleaned = raw
+      .split(/[/?#]/)
+      .filter(Boolean)
+      .pop() || '';
+    return cleaned.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim() || fallback;
+  }
+}
+
+function getSuggestedTitle() {
+  if (pickedFiles.length) {
+    const first = pickedFiles[0];
+    if (first?.name) return first.name.replace(/\.[^.]+$/, '');
+  }
+
+  if (pickedFile?.name) {
+    return pickedFile.name.replace(/\.[^.]+$/, '');
+  }
+
+  const url = (urlInput?.value || '').trim();
+  if (url) {
+    const fallbackUrlTitle = getFallbackTitle(url);
+    return currentMeta?.title && String(currentMeta.title).trim() && String(currentMeta.title).toLowerCase() !== 'audio'
+      ? String(currentMeta.title).trim()
+      : fallbackUrlTitle;
+  }
+
+  return currentMeta?.title && String(currentMeta.title).trim() && String(currentMeta.title).toLowerCase() !== 'audio'
+    ? String(currentMeta.title).trim()
+    : 'audio';
+}
 
 function resetUploadStatus() {
   uploadStatus.textContent = '';
@@ -185,6 +233,9 @@ function formatMinutes(seconds) {
 }
 
 async function fetchBatchLinkMetadata(url, linkId) {
+  const state = batchLinkStates[linkId] || {};
+  if (state.loaded || state.loading) return;
+
   try {
     const res = await fetch('/api/metadata', {
       method: 'POST',
@@ -451,9 +502,10 @@ urlInput.addEventListener('input', () => {
     batchLinkStates = {};
     renderBatchPreview();
   }
+
+  clearTimeout(metadataDebounceTimer);
+  metadataDebounceTimer = setTimeout(() => loadMetadata(), 300);
 });
-urlInput.addEventListener('change', loadMetadata);
-urlInput.addEventListener('blur', loadMetadata);
 
 function selectFile(file) {
   pickedFile = file || null;
@@ -491,14 +543,19 @@ dropZone.addEventListener('drop', (e) => {
   selectFiles(files);
 });
 
-async function loadMetadata() {
+async function loadMetadata(force = false) {
   lastConvertedFileName = null;
   resetUploadStatus();
   const url = urlInput.value.trim();
   if (!url || pickedFiles.length) return;
+  if (!force && (metadataLoadingUrl === url || (currentMeta?.sourceUrl === url && currentMeta?.loaded))) return;
+
   hideAlert();
   badge.textContent = 'LOADING';
   note.textContent = 'Membaca metadata...';
+
+  const requestId = ++metadataFetchToken;
+  metadataLoadingUrl = url;
 
   try {
     const res = await fetch('/api/metadata', {
@@ -508,15 +565,39 @@ async function loadMetadata() {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Metadata gagal dibaca.');
-    currentMeta = data;
-    title.textContent = data.title || 'Audio';
-    badge.textContent = data.provider || 'URL';
-    note.textContent = data.note || (data.duration ? `Duration: ${data.duration}s` : 'Siap dikonversi ke OGG.');
-    cover.src = data.thumbnail || '/placeholder.svg';
+
+    const fallbackTitle = getFallbackTitle(url);
+    const resolvedTitle = (data.title && String(data.title).trim() && String(data.title).toLowerCase() !== 'audio')
+      ? String(data.title).trim()
+      : fallbackTitle;
+
+    if (requestId !== metadataFetchToken) return;
+
+    currentMeta = { ...data, sourceUrl: url, loaded: true, title: resolvedTitle };
+    title.textContent = currentMeta.title || 'Audio';
+    badge.textContent = currentMeta.provider || 'URL';
+    note.textContent = currentMeta.note || (currentMeta.duration ? `Duration: ${currentMeta.duration}s` : 'Siap dikonversi ke OGG.');
+    cover.src = currentMeta.thumbnail || '/placeholder.svg';
   } catch (err) {
+    if (requestId !== metadataFetchToken) return;
+
+    const fallbackTitle = getFallbackTitle(url);
+    currentMeta = {
+      ...currentMeta,
+      sourceUrl: url,
+      loaded: false,
+      title: currentMeta?.title && String(currentMeta.title).trim() && String(currentMeta.title).toLowerCase() !== 'audio'
+        ? String(currentMeta.title).trim()
+        : fallbackTitle
+    };
+    title.textContent = currentMeta.title || 'Audio';
     badge.textContent = 'ERROR';
     note.textContent = 'Metadata gagal dibaca, tapi kamu masih bisa coba convert.';
     showAlert(err.message);
+  } finally {
+    if (requestId === metadataFetchToken) {
+      metadataLoadingUrl = null;
+    }
   }
 }
 
@@ -546,7 +627,7 @@ convertBtn.addEventListener('click', async () => {
   form.append('normalize', normalize.checked ? 'on' : 'off');
   form.append('quality', qualityMax.checked ? 'max' : 'standard');
   form.append('cleanMaster', cleanMaster.checked ? 'on' : 'off');
-  form.append('title', currentMeta.title || 'audio');
+  form.append('title', getSuggestedTitle());
 
   let isBatchRequest = false;
   let requestOptions = { method: 'POST' };
@@ -568,7 +649,7 @@ convertBtn.addEventListener('click', async () => {
     payload.normalize = normalize.checked ? 'on' : 'off';
     payload.quality = qualityMax.checked ? 'max' : 'standard';
     payload.cleanMaster = cleanMaster.checked ? 'on' : 'off';
-    payload.title = currentMeta.title || 'audio';
+    payload.title = getSuggestedTitle();
     requestOptions.headers = { 'Content-Type': 'application/json' };
     requestOptions.body = JSON.stringify(payload);
   } else {
@@ -649,7 +730,7 @@ $('uploadRobloxBtn').addEventListener('click', async () => {
 
   if (pickedFile && pickedFile.name.toLowerCase().endsWith('.ogg')) {
     form.append('file', pickedFile);
-    form.append('title', currentMeta.title || pickedFile.name.replace(/\.[^.]+$/, ''));
+    form.append('title', getSuggestedTitle());
     form.append('robloxSettings', JSON.stringify(getLocalRobloxSettings()));
     isDirectOggUpload = true;
   }
