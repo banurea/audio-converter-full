@@ -63,23 +63,49 @@ function bin(name) {
   return resolved.command;
 }
 
-function resolveCookiesFile() {
-  // Support providing raw cookies file content via environment variable.
-  // This is useful on platforms like Render where you can set a secret
-  // and write it to disk at runtime instead of committing a cookies file.
+async function resolveCookiesFile() {
+  // Support providing raw cookies file content via environment variables.
+  // Useful on Render when you store a secret or a remote cookie payload instead of committing a file.
   const cookiesContent = process.env.YT_DLP_COOKIES_CONTENT;
+  const cookiesBase64 = process.env.YT_DLP_COOKIES_BASE64;
+  const cookiesUrl = process.env.YT_DLP_COOKIES_URL;
+  const dest = path.join(TMP_DIR, "cookies.txt");
+
+  const writeCookies = (content) => {
+    fs.mkdirSync(TMP_DIR, { recursive: true });
+    if (!fs.existsSync(dest) || fs.readFileSync(dest, "utf8") !== content) {
+      fs.writeFileSync(dest, content, { mode: 0o600 });
+    }
+    return dest;
+  };
+
   if (cookiesContent) {
     try {
-      const dest = path.join(TMP_DIR, "cookies.txt");
-      // only write when missing or changed
-      if (
-        !fs.existsSync(dest) ||
-        fs.readFileSync(dest, "utf8") !== cookiesContent
-      ) {
-        fs.writeFileSync(dest, cookiesContent, { mode: 0o600 });
+      return writeCookies(cookiesContent);
+    } catch (_) {
+      // ignore write failure and continue to fallback paths
+    }
+  }
+
+  if (cookiesBase64) {
+    try {
+      const content = Buffer.from(cookiesBase64, "base64").toString("utf8");
+      return writeCookies(content);
+    } catch (_) {
+      // ignore invalid base64 and continue
+    }
+  }
+
+  if (cookiesUrl) {
+    try {
+      const res = await fetch(cookiesUrl);
+      if (res.ok) {
+        const content = await res.text();
+        return writeCookies(content);
       }
-      return dest;
-    } catch (_) {}
+    } catch (_) {
+      // ignore fetch failure and continue to local file candidates
+    }
   }
 
   const candidates = [
@@ -98,9 +124,9 @@ function resolveCookiesFile() {
   return "";
 }
 
-function runYtDlp(url, args = [], options = {}) {
+async function runYtDlp(url, args = [], options = {}) {
   const nodeExecutable = process.env.NODE || process.execPath;
-  const cookiesFile = resolveCookiesFile();
+  const cookiesFile = await resolveCookiesFile();
   const ytArgs = buildYtDlpArgs({
     url,
     extraArgs: args,
