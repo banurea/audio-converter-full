@@ -8,6 +8,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const { spawn } = require('child_process');
 const { nanoid } = require('nanoid');
+const { resolveExecutableCommand } = require('./lib/command-resolver');
 const { loadRobloxSettings, saveRobloxSettings, resolveRobloxSettings } = require('./lib/roblox-settings');
 
 const app = express();
@@ -21,6 +22,14 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || `http://localhost:${PORT
 
 fs.mkdirSync(TMP_DIR, { recursive: true });
 fs.mkdirSync(OUT_DIR, { recursive: true });
+
+const localYtdlp = path.join(ROOT, 'yt-dlp');
+if (process.platform !== 'win32' && fs.existsSync(localYtdlp)) {
+  try {
+    fs.chmodSync(localYtdlp, 0o755);
+  } catch (_) {}
+}
+
 loadRobloxSettings({ rootDir: ROOT });
 
 const upload = multer({
@@ -37,18 +46,8 @@ app.use(express.static(path.join(ROOT, 'public')));
 app.use('/downloads', express.static(OUT_DIR));
 
 function bin(name) {
-  if (process.platform === 'win32') {
-    const exe = name.endsWith('.exe') ? name : `${name}.exe`;
-    // Prefer a local binary in the project root if present (makes testing on Windows easier)
-    try {
-      const local = path.join(ROOT, exe);
-      if (fs.existsSync(local)) return local;
-    } catch (_) {}
-
-    return exe;
-  }
-
-  return name;
+  const resolved = resolveExecutableCommand(name, { rootDir: ROOT, platform: process.platform });
+  return resolved.command;
 }
 
 function run(cmd, args, options = {}) {
@@ -69,7 +68,13 @@ function run(cmd, args, options = {}) {
       stderr += d.toString();
     });
 
-    child.on('error', reject);
+    child.on('error', err => {
+      if (err && err.code === 'ENOENT') {
+        reject(new Error(`Tidak bisa menjalankan "${cmd}". Pastikan executable tersedia di PATH atau proyek memiliki file yang bisa dieksekusi.`));
+      } else {
+        reject(err);
+      }
+    });
 
     child.on('close', code => {
       if (code === 0) {
