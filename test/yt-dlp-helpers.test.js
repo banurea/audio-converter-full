@@ -8,7 +8,7 @@ const { buildYtDlpArgs } = require('../lib/yt-dlp-helpers');
 test('buildYtDlpArgs adds a cookies file when provided', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yt-dlp-cookies-'));
   const cookiePath = path.join(tempDir, 'cookies.txt');
-  fs.writeFileSync(cookiePath, '');
+  fs.writeFileSync(cookiePath, '# Netscape HTTP Cookie File\n.example.com\tTRUE\t/\tFALSE\t0\tfoo\tbar\n');
 
   const args = buildYtDlpArgs({
     url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',

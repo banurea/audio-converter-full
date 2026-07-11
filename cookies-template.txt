@@ -1,0 +1,7 @@
+# Netscape HTTP Cookie File
+# Contoh format valid untuk yt-dlp.
+# Ganti bagian ini dengan hasil export cookies dari browser Anda.
+# Format tiap baris:
+# domain\tflag\tpath\tsecure\texpiration\tname\tvalue
+
+.example.com\tTRUE\t/\tFALSE\t0\tfoo\tbar
