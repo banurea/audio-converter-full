@@ -248,6 +248,8 @@ const BAD_TITLE_WORDS = [
   'anjing', 'bangsat', 'bajingan', 'kontol', 'perek', 'puki', 'jancok', 'ngentot', 'tai', 'taik', 'memek', 'vagina', 'titit', 'asw', 'babi', 'gila', 'brengsek', 'setan', 'bajing', 'pepek', 'meki', 'ngewe', 'kntl'
 ];
 
+const SAFE_TITLE_FALLBACKS = ['audio', 'youtube audio', 'spotify audio', 'soundcloud audio', 'url audio'];
+
 function sanitizeName(name) {
   return String(name || 'audio')
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
@@ -263,12 +265,16 @@ function isBadTitle(name) {
 
 function normalizeTitle(name, maxWords = 3) {
   const cleaned = sanitizeName(name);
+  if (!cleaned || SAFE_TITLE_FALLBACKS.includes(cleaned.toLowerCase())) {
+    return 'audio';
+  }
+
   const words = cleaned
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, maxWords);
   const title = words.join(' ') || 'audio';
-  return isBadTitle(title) ? 'baik' : title;
+  return isBadTitle(title) ? 'audio' : title;
 }
 
 function makeShortBase(name, maxLen = 28) {
@@ -320,9 +326,9 @@ function escapeRegExp(value) {
 function replaceBadWords(value) {
   let text = String(value || '');
   for (const bad of BAD_TITLE_WORDS) {
-    text = text.replace(new RegExp(`\\b${escapeRegExp(bad)}\\b`, 'gi'), 'baik');
+    text = text.replace(new RegExp(`\\b${escapeRegExp(bad)}\\b`, 'gi'), '');
   }
-  return text;
+  return text.replace(/\s+/g, ' ').trim();
 }
 
 function sanitizeRobloxText(value, maxLen = 250, defaultValue = 'Uploaded automatically') {
