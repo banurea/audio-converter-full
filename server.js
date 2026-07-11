@@ -246,8 +246,57 @@ async function fetchYoutubeOEmbedTitle(url) {
 function looksLikeVideoId(str) {
   if (!str) return false;
   const s = String(str).trim();
-  // YouTube video IDs are usually 11 chars of A-Za-z0-9_- but tolerate 6-15
   return /^[A-Za-z0-9_-]{6,15}$/.test(s);
+}
+
+function getFallbackUrlTitle(url, fallback = "audio") {
+  try {
+    const parsed = new URL(url);
+    const slug = parsed.pathname.split("/").filter(Boolean).pop() || "";
+    const cleaned = decodeURIComponent(slug || parsed.hostname || fallback)
+      .replace(/\.[^.]+$/, "")
+      .replace(/[-_]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return cleaned || fallback;
+  } catch (_) {
+    const raw = String(url || "").trim();
+    const cleaned = raw.split(/[/?#]/).filter(Boolean).pop() || "";
+    return (
+      cleaned.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim() || fallback
+    );
+  }
+}
+
+async function resolveYoutubeTitle(url, currentTitle = "") {
+  const title = String(currentTitle || "").trim();
+  if (title && title.toLowerCase() !== "audio" && !looksLikeVideoId(title)) {
+    return title;
+  }
+
+  let resolved = null;
+
+  try {
+    const { stdout } = await runYtDlp(url, [
+      "--dump-json",
+      "--no-playlist",
+      url,
+    ]);
+    const meta = JSON.parse(stdout || "{}");
+    resolved = meta?.title ? String(meta.title).trim() : null;
+  } catch (_) {
+    resolved = null;
+  }
+
+  if (!resolved || looksLikeVideoId(resolved)) {
+    resolved = await fetchYoutubeOEmbedTitle(url);
+  }
+
+  if (!resolved || looksLikeVideoId(resolved)) {
+    resolved = getFallbackUrlTitle(url, "YouTube audio");
+  }
+
+  return resolved || "audio";
 }
 
 async function getSpotifyTrackInfo(url) {
@@ -971,30 +1020,9 @@ async function convertSingleTask(task) {
     } else if (task.url) {
       const url = String(task.url || "");
       if (isYoutubeUrl(url)) {
-        try {
-          const { stdout } = await runYtDlp(url, [
-            "--dump-json",
-            "--no-playlist",
-            url,
-          ]);
-          const meta = JSON.parse(stdout || "{}");
-          let metaTitle = meta && meta.title ? String(meta.title).trim() : null;
-          if (!metaTitle) {
-            // try oEmbed as a fallback to get a readable title
-            metaTitle = await fetchYoutubeOEmbedTitle(url);
-          }
-          if (!metaTitle) {
-            throw new Error(
-              "YouTube memblokir ekstraksi metadata dari server ini.",
-            );
-          }
-        } catch (err) {
-          return {
-            ok: false,
-            error: getFriendlyYoutubeError(err && err.message),
-            jobId,
-            url,
-          };
+        const resolvedTitle = await resolveYoutubeTitle(url, task.title);
+        if (resolvedTitle) {
+          title = normalizeBatchTitle(resolvedTitle, url);
         }
       }
 
@@ -1019,23 +1047,6 @@ async function convertSingleTask(task) {
         const cleanUrl = isTiktokUrl(url) ? String(url).split("?")[0] : url;
         const tempBase = path.join(TMP_DIR, jobId);
         const wavPath = `${tempBase}.wav`;
-
-        if (isYoutubeUrl(url) && !task.title) {
-          try {
-            const { stdout: metaOut } = await runYtDlp(url, [
-              "--dump-json",
-              "--no-playlist",
-              url,
-            ]);
-            const meta = JSON.parse(metaOut || "{}");
-            let metaTitle =
-              meta && meta.title ? String(meta.title).trim() : null;
-            if (!metaTitle) metaTitle = await fetchYoutubeOEmbedTitle(url);
-            title = normalizeBatchTitle(metaTitle || "YouTube audio", url);
-          } catch (err) {
-            console.log("[convert] metadata fetch failed", err && err.message);
-          }
-        }
 
         const ytdlpArgsBase = ["--no-playlist", "-f", "bestaudio/best"];
         if (isTiktokUrl(url)) {
