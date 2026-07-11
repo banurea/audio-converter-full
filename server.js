@@ -9,6 +9,7 @@ const fsp = fs.promises;
 const { spawn } = require('child_process');
 const { nanoid } = require('nanoid');
 const { resolveExecutableCommand } = require('./lib/command-resolver');
+const { buildYtDlpArgs, getFriendlyYoutubeError } = require('./lib/yt-dlp-helpers');
 const { loadRobloxSettings, saveRobloxSettings, resolveRobloxSettings } = require('./lib/roblox-settings');
 
 const app = express();
@@ -50,20 +51,10 @@ function bin(name) {
   return resolved.command;
 }
 
-function getYtDlpArgs(url = '', extraArgs = []) {
-  const args = ['--no-update'];
-
-  if (isYoutubeUrl(url)) {
-    args.push('--extractor-args', 'youtube:player_client=web');
-    args.push('--extractor-args', 'youtube:player_skip=web');
-    args.push('--add-header', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36');
-  }
-
-  return [...args, ...extraArgs];
-}
-
 function runYtDlp(url, args = [], options = {}) {
-  return run(bin('yt-dlp'), getYtDlpArgs(url, args), options);
+  const nodeExecutable = process.env.NODE || process.execPath;
+  const ytArgs = buildYtDlpArgs({ url, extraArgs: args, nodeExecutable });
+  return run(bin('yt-dlp'), ytArgs, options);
 }
 
 function run(cmd, args, options = {}) {
@@ -842,7 +833,8 @@ async function convertSingleTask(task) {
             msg.includes('Sign in to confirm you’re not a bot') ||
             msg.includes('Sign in to confirm you\'re not a bot') ||
             msg.includes('cookies') ||
-            msg.includes('bot')
+            msg.includes('bot') ||
+            msg.includes('javascript runtime')
           ) {
             const argsVideo = ['--no-playlist', '-f', 'bestvideo+bestaudio/best', '-o', `${tempBase}.%(ext)s`];
             if (isTiktokUrl(url)) {
@@ -858,7 +850,7 @@ async function convertSingleTask(task) {
             }
 
             if (!produced || !fs.existsSync(produced)) {
-              throw new Error('YouTube memblokir ekstraksi yt-dlp di server ini. Coba gunakan link yang berbeda atau upload file audio langsung.');
+              throw new Error(getFriendlyYoutubeError(err && err.message));
             }
 
             inputPath = produced;
@@ -1291,7 +1283,8 @@ app.post('/api/convert', upload.array('files', 20), async (req, res) => {
               msg.includes('Sign in to confirm you’re not a bot') ||
               msg.includes('Sign in to confirm you\'re not a bot') ||
               msg.includes('cookies') ||
-              msg.includes('bot')
+              msg.includes('bot') ||
+              msg.includes('javascript runtime')
             ) {
               const argsVideo = ['--no-playlist', '-f', 'bestvideo+bestaudio/best', '-o', `${tempBase}.%(ext)s`];
               if (isTiktokUrl(url)) {
