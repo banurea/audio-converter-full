@@ -231,6 +231,25 @@ async function getSpotifyEmbed(url) {
   return res.json();
 }
 
+async function fetchYoutubeOEmbedTitle(url) {
+  try {
+    const api = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+    const res = await fetch(api);
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    return data && data.title ? String(data.title).trim() : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function looksLikeVideoId(str) {
+  if (!str) return false;
+  const s = String(str).trim();
+  // YouTube video IDs are usually 11 chars of A-Za-z0-9_- but tolerate 6-15
+  return /^[A-Za-z0-9_-]{6,15}$/.test(s);
+}
+
 async function getSpotifyTrackInfo(url) {
   const trackId = extractSpotifyTrackId(url);
 
@@ -959,7 +978,12 @@ async function convertSingleTask(task) {
             url,
           ]);
           const meta = JSON.parse(stdout || "{}");
-          if (!meta || !meta.title) {
+          let metaTitle = meta && meta.title ? String(meta.title).trim() : null;
+          if (!metaTitle) {
+            // try oEmbed as a fallback to get a readable title
+            metaTitle = await fetchYoutubeOEmbedTitle(url);
+          }
+          if (!metaTitle) {
             throw new Error(
               "YouTube memblokir ekstraksi metadata dari server ini.",
             );
@@ -1003,8 +1027,11 @@ async function convertSingleTask(task) {
               "--no-playlist",
               url,
             ]);
-            const meta = JSON.parse(metaOut);
-            title = normalizeBatchTitle(meta.title || "YouTube audio", url);
+            const meta = JSON.parse(metaOut || "{}");
+            let metaTitle =
+              meta && meta.title ? String(meta.title).trim() : null;
+            if (!metaTitle) metaTitle = await fetchYoutubeOEmbedTitle(url);
+            title = normalizeBatchTitle(metaTitle || "YouTube audio", url);
           } catch (err) {
             console.log("[convert] metadata fetch failed", err && err.message);
           }
@@ -1160,10 +1187,11 @@ async function convertSingleTask(task) {
           task.url,
         ]);
         const meta = JSON.parse(metaOut || "{}");
-        if (meta && meta.title) {
-          // prefer existing non-placeholder title, otherwise use metadata
+        let metaTitle = meta && meta.title ? String(meta.title).trim() : null;
+        if (!metaTitle) metaTitle = await fetchYoutubeOEmbedTitle(task.url);
+        if (metaTitle && !looksLikeVideoId(metaTitle)) {
           if (!title || title === "audio" || /^audio$/i.test(title))
-            title = meta.title;
+            title = metaTitle;
         }
       } else if (task.url && isSoundCloudUrl(task.url)) {
         // for SoundCloud prefer short generated title when missing
@@ -1468,12 +1496,13 @@ app.post("/api/metadata", async (req, res) => {
         "--no-playlist",
         url,
       ]);
-
-      const data = JSON.parse(stdout);
+      const data = JSON.parse(stdout || "{}");
+      let metaTitle = data && data.title ? String(data.title).trim() : null;
+      if (!metaTitle) metaTitle = await fetchYoutubeOEmbedTitle(url);
 
       return res.json({
         provider: "YouTube",
-        title: normalizeTitle(data.title || "YouTube audio", 5),
+        title: normalizeTitle(metaTitle || "YouTube audio", 5),
         thumbnail: data.thumbnail || "",
         duration: data.duration || null,
       });
@@ -1609,9 +1638,12 @@ app.post("/api/convert", upload.array("files", 20), async (req, res) => {
                 "--no-playlist",
                 url,
               ]);
-              const meta = JSON.parse(metaOut);
-              if (meta && meta.title) {
-                title = normalizeTitle(meta.title, 5);
+              const meta = JSON.parse(metaOut || "{}");
+              let metaTitle =
+                meta && meta.title ? String(meta.title).trim() : null;
+              if (!metaTitle) metaTitle = await fetchYoutubeOEmbedTitle(url);
+              if (metaTitle && !looksLikeVideoId(metaTitle)) {
+                title = normalizeTitle(metaTitle, 5);
               }
             } catch (e) {
               console.log(
