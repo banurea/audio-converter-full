@@ -56,7 +56,6 @@ function getYtDlpArgs(url = '', extraArgs = []) {
   if (isYoutubeUrl(url)) {
     args.push('--extractor-args', 'youtube:player_client=web');
     args.push('--extractor-args', 'youtube:player_skip=web');
-    args.push('--cookies-from-browser', 'chrome');
     args.push('--add-header', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36');
   }
 
