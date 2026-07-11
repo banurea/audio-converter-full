@@ -54,8 +54,10 @@ function getYtDlpArgs(url = '', extraArgs = []) {
   const args = ['--no-update'];
 
   if (isYoutubeUrl(url)) {
-    args.push('--js-runtimes', 'nodejs');
     args.push('--extractor-args', 'youtube:player_client=web');
+    args.push('--extractor-args', 'youtube:player_skip=web');
+    args.push('--cookies-from-browser', 'chrome');
+    args.push('--add-header', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36');
   }
 
   return [...args, ...extraArgs];
@@ -835,7 +837,14 @@ async function convertSingleTask(task) {
           }
         } catch (err) {
           const msg = String(err && err.message || '');
-          if (msg.includes('Postprocessing') || msg.includes('unable to obtain file audio codec')) {
+          if (
+            msg.includes('Postprocessing') ||
+            msg.includes('unable to obtain file audio codec') ||
+            msg.includes('Sign in to confirm you’re not a bot') ||
+            msg.includes('Sign in to confirm you\'re not a bot') ||
+            msg.includes('cookies') ||
+            msg.includes('bot')
+          ) {
             const argsVideo = ['--no-playlist', '-f', 'bestvideo+bestaudio/best', '-o', `${tempBase}.%(ext)s`];
             if (isTiktokUrl(url)) {
               argsVideo.push('--add-header', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36');
@@ -850,7 +859,7 @@ async function convertSingleTask(task) {
             }
 
             if (!produced || !fs.existsSync(produced)) {
-              throw new Error('Gagal download video sebagai fallback.');
+              throw new Error('YouTube memblokir ekstraksi yt-dlp di server ini. Coba gunakan link yang berbeda atau upload file audio langsung.');
             }
 
             inputPath = produced;
@@ -1276,7 +1285,15 @@ app.post('/api/convert', upload.array('files', 20), async (req, res) => {
             }
           } catch (err) {
             const msg = String(err && err.message || '');
-            if (msg.includes('Postprocessing') || msg.includes('unable to obtain file audio codec') || msg.includes('unable to obtain file audio codec with ffprobe')) {
+            if (
+              msg.includes('Postprocessing') ||
+              msg.includes('unable to obtain file audio codec') ||
+              msg.includes('unable to obtain file audio codec with ffprobe') ||
+              msg.includes('Sign in to confirm you’re not a bot') ||
+              msg.includes('Sign in to confirm you\'re not a bot') ||
+              msg.includes('cookies') ||
+              msg.includes('bot')
+            ) {
               const argsVideo = ['--no-playlist', '-f', 'bestvideo+bestaudio/best', '-o', `${tempBase}.%(ext)s`];
               if (isTiktokUrl(url)) {
                 argsVideo.push('--add-header', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36');
