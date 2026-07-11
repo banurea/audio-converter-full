@@ -350,14 +350,16 @@ function normalizeTitle(name, maxWords = 3) {
   return isBadTitle(title) ? "audio" : title;
 }
 
-function makeShortBase(name, maxLen = 28) {
+function makeShortBase(name, maxLen = 60) {
+  // create a filename-friendly base from a title but keep more of the original
   const clean = sanitizeName(name).replace(/\s+/g, "-");
-  const trimmed = clean.slice(0, maxLen).replace(/(^-+|-+$)/g, "");
+  const safeLen = Math.max(32, Math.min(120, maxLen));
+  const trimmed = clean.slice(0, safeLen).replace(/(^-+|-+$)/g, "");
   return trimmed || `audio`;
 }
 
-function makeDisplayTitle(name, maxLen = 40) {
-  // name is expected to already be normalized for word count.
+function makeDisplayTitle(name, maxLen = 120) {
+  // Preserve the original (sanitized) title for display; allow longer defaults
   const clean = sanitizeName(name).slice(0, maxLen);
   return clean;
 }
@@ -891,11 +893,18 @@ function findFileForItem(item, files) {
 }
 
 function normalizeBatchTitle(name, url) {
+  // Preserve original metadata title when possible; sanitize but do not compress into a short slug.
   const baseTitle = String(name || "").trim();
-  return normalizeTitle(
-    baseTitle || (isYoutubeUrl(url) ? "YouTube audio" : "audio"),
-    5,
-  );
+  let candidate =
+    sanitizeName(baseTitle) || (isYoutubeUrl(url) ? "YouTube audio" : "audio");
+  if (!candidate) candidate = "audio";
+  if (
+    SAFE_TITLE_FALLBACKS.includes(candidate.toLowerCase()) ||
+    isBadTitle(candidate)
+  ) {
+    return "audio";
+  }
+  return candidate;
 }
 
 function buildConvertTask(raw, files, defaultOptions = {}) {
@@ -1804,12 +1813,9 @@ app.post("/api/convert", upload.array("files", 20), async (req, res) => {
 
         const hasAudioAfter = await hasAudioStream(inputPath);
         if (!hasAudioAfter) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "Media tidak mengandung track audio yang dapat dikonversi.",
-            });
+          return res.status(400).json({
+            error: "Media tidak mengandung track audio yang dapat dikonversi.",
+          });
         }
       }
 
@@ -2123,11 +2129,9 @@ app.post("/api/convert-batch", upload.array("files", 20), async (req, res) => {
     }
 
     if (!tasks.length) {
-      return res
-        .status(400)
-        .json({
-          error: "Tidak ada item konversi. Kirim URL, file, atau daftar items.",
-        });
+      return res.status(400).json({
+        error: "Tidak ada item konversi. Kirim URL, file, atau daftar items.",
+      });
     }
 
     const results = [];
