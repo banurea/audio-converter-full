@@ -51,9 +51,27 @@ function bin(name) {
   return resolved.command;
 }
 
+function resolveCookiesFile() {
+  const candidates = [
+    process.env.YT_DLP_COOKIES_FILE,
+    process.env.COOKIES_FILE,
+    path.join(ROOT, 'cookies.txt'),
+    '/app/cookies.txt'
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch (_) {}
+  }
+
+  return '';
+}
+
 function runYtDlp(url, args = [], options = {}) {
   const nodeExecutable = process.env.NODE || process.execPath;
-  const ytArgs = buildYtDlpArgs({ url, extraArgs: args, nodeExecutable });
+  const cookiesFile = resolveCookiesFile();
+  const ytArgs = buildYtDlpArgs({ url, extraArgs: args, nodeExecutable, cookiesFile });
   return run(bin('yt-dlp'), ytArgs, options);
 }
 

@@ -33,6 +33,14 @@ http://localhost:3000
 - FFmpeg
 - yt-dlp
 
+## Render / deployment
+
+Jika Anda deploy di Render, Anda bisa menambahkan environment variable:
+
+- `YT_DLP_COOKIES_FILE=/app/cookies.txt`
+
+Simpan file `cookies.txt` ke repo atau upload lewat deploy artifact, lalu pastikan path benar. Jika file tidak ada, aplikasi tetap akan lanjut tanpa cookies.
+
 Cek:
 
 ```cmd

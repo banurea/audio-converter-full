@@ -1,0 +1,4 @@
+# Contoh file cookies untuk yt-dlp
+# Ganti isi ini dengan hasil export cookies dari browser Anda.
+# Format file cookies harus sesuai format Netscape/Mozilla cookies.txt.
+# Jika file ini kosong atau tidak valid, aplikasi tetap akan lanjut tanpa cookies.
